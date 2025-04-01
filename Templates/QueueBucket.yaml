@@ -1,0 +1,89 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'CloudFormation template for S3 bucket and SQS queue with Lambda integration.'
+
+Parameters:
+  # For naming stack resources via parameters
+  QueueName:
+    Type: String
+    Description: Name for the SQS queue
+  BucketName:
+    Type: String
+    Description: Name for the S3 bucket
+  TopicName:
+    Type: String
+    Description: Name for the SNS topic
+  TopicEmail:
+    Type: String
+    Description: Email for the SNS topic
+
+Resources:
+  # SQS Queue (for S3 event notifications)
+  FaceQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Ref QueueName
+      VisibilityTimeout: 300
+
+  # SQS Policy (allow S3 to send messages)
+  FaceQueuePolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      Queues:
+        - !Ref FaceQueue
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: 'Allow-S3-SendMessage'
+            Effect: 'Allow'
+            Principal:
+              Service: 's3.amazonaws.com'
+            Action: 
+              - "SQS:SendMessage" 
+            Resource: !GetAtt FaceQueue.Arn
+
+  # S3 Bucket (with event notifications)
+  FaceBucket:
+    DependsOn: FaceQueue
+    Type: 'AWS::S3::Bucket'
+    DeletionPolicy: Delete
+    Properties:
+      BucketName: !Ref BucketName
+      NotificationConfiguration:
+        QueueConfigurations:
+          - Event: 's3:ObjectCreated:Put'
+            Queue: !GetAtt FaceQueue.Arn
+      PublicAccessBlockConfiguration:
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  # SNS Topic (for alert email)
+  AlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Ref TopicName
+      
+  # Subscribe email to the SNS Topic
+  AlertSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref AlertTopic
+      Protocol: email
+      Endpoint: !Ref TopicEmail
+
+# 
+Outputs:
+  SQSArn:
+    Description: 'ARN of the SQS queue for Lambda triggering'
+    Value: !GetAtt FaceQueue.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-SQSArn'
+  
+  S3BucketName:
+    Description: 'Name of the S3 bucket for uploads'
+    Value: !Ref FaceBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-S3BucketName'
+      
+  SNSTopicArn:
+    Value: !Ref AlertTopic
+    Description: ARN of the SNS topic for alerts

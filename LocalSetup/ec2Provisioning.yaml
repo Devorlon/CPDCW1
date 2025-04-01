@@ -1,0 +1,58 @@
+---
+- name: Provision Face Recognition EC2 Instance
+  hosts: face_setup
+  become: yes
+  vars:
+    aws_region: us-east-1
+
+  tasks:
+    - name: Update system packages
+      yum:
+        name: '*'
+        state: latest
+        update_cache: yes
+
+    - name: Install required system packages
+      yum:
+        name:
+          - git
+          - python3
+          - pip
+        state: present
+
+    - name: Install Python dependencies
+      pip:
+        name: boto3
+        executable: pip3
+
+    - name: Create AWS config directory
+      file:
+        path: /home/ec2-user/.aws
+        state: directory
+        mode: 0700
+        owner: ec2-user
+
+    - name: Create AWS config file
+      copy:
+        dest: /home/ec2-user/.aws/config
+        content: |
+          [default]
+          region = {{ aws_region }}
+        mode: 0600
+        owner: ec2-user
+      when: ansible_user == 'ec2-user'
+
+    - name: Clone GitHub repository
+      git:
+        repo: "{{ github_repo }}"
+        dest: /home/ec2-user/CPDCW1
+        version: main
+        force: yes
+
+    - name: change ownership
+      file:
+        path: "/home/ec2-user/CPDCW1"
+        owner: "ec2-user"
+        group: "ec2-user"
+        state: directory
+        recurse: yes
